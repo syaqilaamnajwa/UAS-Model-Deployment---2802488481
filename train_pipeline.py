@@ -1,5 +1,7 @@
 import os
 import joblib
+import mlflow
+import mlflow.sklearn
 import pandas as pd
 import numpy as np
 
@@ -10,7 +12,7 @@ from sklearn.pipeline import Pipeline
 
 from sklearn.linear_model import LogisticRegression
 from sklearn.tree import DecisionTreeClassifier
-from sklearn.ensemble import RandomForestClassifier
+from sklearn.ensemble import RandomForestClassifier, ExtraTreesClassifier
 
 from sklearn.metrics import (
     accuracy_score,
@@ -138,26 +140,39 @@ class ModelTrainer:
         self.preprocessor = preprocessor
 
         self.models = {
-            "Logistic Regression": LogisticRegression(max_iter=1000, random_state=42),
-            "Decision Tree": DecisionTreeClassifier(random_state=42),
+            "Logistic Regression": LogisticRegression(
+                max_iter=1000,
+                random_state=42
+            ),
+            "Decision Tree": DecisionTreeClassifier(
+                random_state=42
+            ),
             "Random Forest": RandomForestClassifier(
                 n_estimators=100,
+                random_state=42,
+                n_jobs=-1
+            ),
+            "Tuned Model (Extra Trees)": ExtraTreesClassifier(
+                n_estimators=200,
+                min_samples_split=5,
+                min_samples_leaf=1,
+                max_features=None,
+                max_depth=50,
+                criterion="entropy",
+                bootstrap=False,
                 random_state=42,
                 n_jobs=-1
             )
         }
 
     def train_and_log_models(self, X_train, X_test, y_train, y_test):
-        import mlflow
-        import mlflow.sklearn
-
         results = []
         best_pipeline = None
         best_model_name = None
         best_f1 = 0
 
-        mlflow_db = os.path.join(BASE_DIR, "mlflow.db")
-        mlflow.set_tracking_uri(f"sqlite:///{mlflow_db}")
+        mlflow_db_path = os.path.join(BASE_DIR, "mlflow.db")
+        mlflow.set_tracking_uri(f"sqlite:///{mlflow_db_path}")
         mlflow.set_experiment("Credit Score Classification")
 
         for model_name, model in self.models.items():
@@ -177,15 +192,20 @@ class ModelTrainer:
                 recall = recall_score(y_test, y_pred, average="weighted", zero_division=0)
                 f1 = f1_score(y_test, y_pred, average="weighted", zero_division=0)
 
-                report = classification_report(y_test, y_pred)
-
                 mlflow.log_param("model_name", model_name)
+
+                for param_name, param_value in model.get_params().items():
+                    mlflow.log_param(param_name, param_value)
+
                 mlflow.log_metric("accuracy", accuracy)
                 mlflow.log_metric("precision", precision)
                 mlflow.log_metric("recall", recall)
                 mlflow.log_metric("f1_score", f1)
 
-                report_path = os.path.join(BASE_DIR, f"{model_name.replace(' ', '_')}_report.txt")
+                report = classification_report(y_test, y_pred)
+                report_filename = f"{model_name.replace(' ', '_').replace('(', '').replace(')', '')}_classification_report.txt"
+                report_path = os.path.join(BASE_DIR, report_filename)
+
                 with open(report_path, "w") as file:
                     file.write(report)
 
@@ -277,7 +297,8 @@ if __name__ == "__main__":
     print("\nFinal Metrics:")
     print(final_metrics)
 
-    joblib.dump(best_pipeline, MODEL_PATH)
+    joblib.dump(best_pipeline, MODEL_PATH, compress=5)
 
     print(f"\nBest model saved as: {MODEL_PATH}")
+    print("Model size:", round(os.path.getsize(MODEL_PATH) / 1024 / 1024, 2), "MB")
     print("Pipeline finished successfully.")
