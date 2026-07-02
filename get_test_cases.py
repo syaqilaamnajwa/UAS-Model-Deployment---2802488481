@@ -1,7 +1,7 @@
 import os
 import joblib
 import pandas as pd
-from train_pipeline import DataPreprocessor
+from preprocessing import DataPreprocessor
 
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
